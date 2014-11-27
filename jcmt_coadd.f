@@ -41,6 +41,11 @@ C        own gsd_get0c (meant that opening and closing GSD file
 C        is necessary 3 times more per file :-( - don't have time to
 C        be tidy!)
 
+C  13 Feb 1997
+C     Fix filename inquire for CBE data
+C     Fix internal read for aperture if no aperture (ie CBE)
+C     Remove NAG (replace KS test with SCUBA/Num Rec version)
+
 C ------------ End UNIX fixes ----------------
 
 
@@ -70,7 +75,8 @@ c    mt_gsddir:gsd_lib/opt,-
 c    gks_dir:gkslink/opt,-
 c    @ems_dir:emslink
 c  $ EXIT
-                        	IMPLICIT NONE
+
+      IMPLICIT NONE
 *    Global constants :
        include '/star/include/adam_err'
        include '/star/include/prm_par'
@@ -120,9 +126,12 @@ c  $ EXIT
 	character*20 summary
 
 *  New variables: added by RPT 05-Mar-1994
-        integer      cline, len
+        integer      cline, length
         logical      exists,nofile     ! HEM
 
+* Check length of string with system library call: TimJ 13-Feb-1997
+        integer lnblnk
+        external lnblnk
 
 1000    FORMAT (A)
 1001    format(a8)     !  filter        
@@ -137,9 +146,9 @@ c  $ EXIT
 C  Get DATADIR from the command line parameters
 C 
         call getenv( "DATADIR", datadir )
-        len = 64
-        do while ( datadir(len:len).eq.' ' .and. len.gt.0 )
-          len = len -1
+        length = 64
+        do while ( datadir(length:length).eq.' ' .and. length.gt.0 )
+          length = length -1
         enddo
 
 	write(6,*)' '
@@ -178,8 +187,9 @@ C
           write(scan(4:4),'(I1)') i
         endif
 
-C The unix library assumes .dat and fails to read a GSD file if you
-C explicitly say .dat
+C The GSD library opens a file with or without the .dat extension
+C Inquire must have the .dat.
+
         input='obs_ukt14_'//scan(1:4)//''
 C This is a kludge - should use LEN of some kind
         actinput=input(1:14)//'.dat'//''
@@ -190,7 +200,7 @@ C        print *,'Filename is ',actinput
            nofile=.false.
         else
 C Same kludge here...
-           actinput=datadir(1:len)//'/'//input(1:14)//'.dat'//''
+           actinput=datadir(1:length)//'/'//input(1:14)//'.dat'//''
 C        print *,'Filename is ',actinput
            inquire(file=actinput,exist=exists)
            if(exists) then
@@ -200,7 +210,7 @@ C        print *,'Filename is ',actinput
 C Same kludge here...
               actinput=input(1:12)//'.dat'//''
 C        print *,'Filename is ',actinput
-              inquire(file=input,exist=exists)
+              inquire(file=actinput,exist=exists)
               if(exists) then
                  nofile=.false.
                  write(6,*) '   Heterodyne (CBE) photometry:'
@@ -208,9 +218,9 @@ C        print *,'Filename is ',actinput
               else
                  input='obs_cbe_'//scan(1:4)//''
 C Same kludge here...
-                 actinput=datadir(1:len)//'/'//input(1:12)//'.dat'//''
+                 actinput=datadir(1:length)//'/'//input(1:12)//'.dat'//''
 C        print *,'Filename is ',actinput
-                 inquire(file=input,exist=exists)
+                 inquire(file=actinput,exist=exists)
                  if(exists) then
                     nofile=.false.
                     write(6,*) '   Heterodyne (CBE) photometry:'
@@ -313,14 +323,23 @@ C        print *,'Filename is ',actinput
            variname='C7AP'
            STATUS = ADAM__OK
            CALL GET_CHARACTER(input, variname, c_aperture, STATUS)
-*           write(6,*) 'C7AP =', c_aperture
-           if (status.ne.adam__ok) c_aperture=' '
+*           write(6,*) 'C7AP =', c_aperture, status
+
 * sometimes the filter is in integer form: e.g. 65 instead of 65.0
-           if (index(c_aperture,'.') .ne. 0) then
-              read(c_aperture,*) aperture
+           if (status.ne.adam__ok) then
+              c_aperture='0'
+              aperture = 0.0
            else
-              read(c_aperture,*) iaperture
-              aperture=float(iaperture)
+              if (index(c_aperture,'.') .ne. 0) then
+                 read(c_aperture,*) aperture                 
+              else
+                 if (lnblnk(c_aperture) .gt. 0) then
+                    read(c_aperture,*) iaperture
+                    aperture=float(iaperture)
+                 else
+                    aperture = 0.0
+                 endif
+              endif
            endif
 
            variname='C3NCYCLE'
@@ -1858,14 +1877,17 @@ c   insertion
 c              KOLMOGOROV-SMIRNOV  NON-PARAMETRIC 2-SAMPLE TEST
 c                      USING NAG ROUTINE  G08CDF
 
-                          implicit none
+        implicit none
 
-         real*8 pair(3000),mvolts_zero(3000),err_zero(3000)
-         real*8 subsample(500,500),suberr(500,500)
+        INTEGER MAX_PAIRS               ! Size of array
+        PARAMETER (MAX_PAIRS = 3000)
+
+         real*4 pair(MAX_PAIRS),mvolts_zero(MAX_PAIRS),err_zero(MAX_PAIRS)
+         real*4 subsample(500,500),suberr(500,500)
        
-         REAL*8 SX(3000),SY(3000)
-         REAL*8 X(3000),Y(3000), erry(3000), D, P, Z
-         real*4 yinc(3000),coadd(3000),errcoadd(3000),pset
+         REAL*4 SX(MAX_PAIRS),SY(MAX_PAIRS)
+         REAL*4 X(MAX_PAIRS),Y(MAX_PAIRS), erry(MAX_PAIRS), D, P
+         real*4 yinc(MAX_PAIRS),coadd(MAX_PAIRS),errcoadd(MAX_PAIRS),pset
 
          INTEGER IFAIL,N,M,NTYPE,size,nocoadd,dummy,total
          integer i,j,k,si,loopmin,loopmax,jsave,index,ii
@@ -1969,16 +1991,15 @@ c                      USING NAG ROUTINE  G08CDF
 
 
 !------------------------------------------------------------------
-C                  PARAMETERS FOR NAG: G08CDF
+C                  PERFORM KS-TEST: Numerical recipes
 !------------------------------------------------------------------
 
-       NTYPE =  1     ! Two-sample test
        IFAIL =  0     !
 
        n=nocoadd      ! no. in coadded sample
        m=size         ! no. in subsample
 
-          CALL G08CDF(N,X,M,Y,NTYPE,D,Z,P,SX,SY,IFAIL)
+          CALL KSTWO(N, X, M, Y, D, P, SX, SY, IFAIL)
 
 !------------------------------------------------------------------
 
@@ -2574,7 +2595,7 @@ c      INTEGER DIMINDEX(GSD__SZINDEX, GSD__MXDIM) !indices of dim. quantities
 * open GSD file (if it is not open):
 
       IF (filename.ne.old_filename) then
-         call gsd_open_read (filename, fd, version, label, nitem, status)
+         call gsd_open_read (filename, fd, version, label, nitem,status)
          if (status .ne. adam__ok) return
          old_filename=filename
       ENDIF
@@ -2714,3 +2735,506 @@ c     type *, '     output string = ', string
 
       return
       end
+
+
+******** Now include the NR KS test from the SCUBA software
+
+********* These are the numerical recipes routines ******************
+ 
+* This is the two sided KS statistic
+ 
+      SUBROUTINE KSTWO(N1, DATA1, N2, DATA2, D, PROB, SORT1, SORT2, 
+     :     STATUS)
+*+
+*  Name:
+*     KSTWO
+ 
+*  Purpose:
+*     Returns the probability that two data sets are from the same sample
+ 
+*  Language:
+*     Starlink Fortran 77
+ 
+*  Invocation:
+*     CALL KSTWO( N1, DATA1, N2, DATA2, D, PROB, SORT1, SORT2, STATUS )
+ 
+*  Description:
+*     This routine computes the two sided KS statistic of two arrays
+*     and returns the probability that the two arrays are drawn from the
+*     same sample.
+ 
+*  Arguments:
+*     N1 = INTEGER (Given)
+*        Number of elements in first array
+*     DATA1 ( N1 ) = REAL (Given & Returned)
+*        First input array
+*     N2 = INTEGER (Given)
+*        Number of elements in second array
+*     DATA2 ( N2 ) = REAL (Given & Returned)
+*        Second input array
+*     D  = REAL (Returned)
+*        Maximum distance between cumulative distribution functions
+*     PROB = REAL (Returned)
+*        Probability two arrays are from the same sample
+*     SORT1 = REAL (Returned)
+*        Sorted form of array DATA1
+*     SORT2 = REAL (Returned)
+*        Sorted form of array DATA2
+*     STATUS = INTEGER (Given & Returned)
+*        Global status value
+ 
+*  Notes:
+ 
+*  Algorithm:
+*     This routine first sorts both arrays and then compares cumulative
+*     distribution functions. The largest separation between these functions
+*     is then used to calculate the Kolmogorov-Smirnov statistic.
+ 
+*  References:
+*     - Press et al, 1992, "Numerical Recipes in FORTRAN", 2nd edition (CUP)
+ 
+*  Implementation status:
+*     - Bad pixels must be removed before passing to this routine
+ 
+*  Authors:
+*     TIMJ: Tim Jenness (JACH)
+*     {enter_new_authors_here}
+ 
+*  History:
+*     1996 October 22 (TIMJ):
+*       Original Starlink version
+*     {enter_changes_here}
+ 
+*  Bugs:
+*     {note_any_bugs_here}
+ 
+*-
+ 
+*  Type Definitions:
+      IMPLICIT  NONE
+ 
+*  Global Constants:
+      INCLUDE '/star/include/sae_par'               ! SSE global definitions
+ 
+*  Arguments Given:
+      INTEGER N1
+      INTEGER N2
+ 
+*  Arguments Given and Returned:
+      REAL    DATA1( N1 )
+      REAL    DATA2( N2 )
+ 
+*  Arguments Returned:
+      REAL    D
+      REAL    PROB
+      REAL    SORT1( N1 )
+      REAL    SORT2( N2 )
+ 
+*  Status:
+      INTEGER STATUS             ! Global status
+ 
+*  External References:
+      EXTERNAL PROBKS
+      REAL     PROBKS                 ! KS statistic
+ 
+*  Local Variables:
+      REAL    D1                      ! Value from first set
+      REAL    D2                      ! Value from second set
+      REAL    DTEMP                   ! Difference between FN2 and FN1
+      REAL    EN                      ! Weighted number of points
+      REAL    FN1                     ! Fraction through data set 1
+      REAL    FN2                     ! Fraction through data set 2
+      INTEGER I                       ! Loop counter
+      INTEGER J1                      ! Counter
+      INTEGER J2                      ! Counter
+      REAL    R1                      ! REAL(N1)
+      REAL    R2                      ! REAL(N2)
+*.
+ 
+*     Check the global inherited status.
+      IF (STATUS .NE. SAI__OK) RETURN 
+ 
+*     Copy data to the scratch arrays
+      DO I = 1, N1
+         SORT1(I) = DATA1(I)
+      END DO
+      DO I = 1, N2
+         SORT2(I) = DATA2(I)
+      END DO
+ 
+ 
+*     Sort the data before further processing
+ 
+      CALL KPG1_QSRTR(N1, 1, N1, SORT1, STATUS)
+      CALL KPG1_QSRTR(N2, 1, N2, SORT2, STATUS)
+ 
+      IF (STATUS .NE. SAI__OK) THEN 
+         PROB = -1.0
+         D    = 0.0
+         RETURN 
+      END IF
+ 
+*     Initialise variables
+      R1 = REAL(N1)
+      R2 = REAL(N2)
+ 
+      J1=1
+      J2=1
+      FN1=0.
+      FN2=0.
+      D=0.
+ 
+*     Loop through data
+      DO WHILE (J1.LE.N1 .AND. J2.LE.N2)
+ 
+         D1 = SORT1(J1)
+         D2 = SORT2(J2)
+ 
+         IF (D1 .LE. D2) THEN
+            FN1 = J1 / R1
+            J1 = J1+1
+         END IF
+ 
+         IF (D2 .LE. D1) THEN
+            FN2 = J2 / R2
+            J2 = J2 + 1
+         END IF
+ 
+*        Find distance between the points
+         DTEMP = ABS(FN2 - FN1)
+         IF (DTEMP.GT.D) D = DTEMP
+      END DO
+ 
+*     Find KS statistic associated with maximum separation
+      EN = SQRT( R1 * R2 / (R1 + R2) )
+      PROB = PROBKS(( EN + 0.12 + 0.11 / EN ) * D)
+ 
+      END
+ 
+ 
+* This is the Kolmogorov-Smirnov probability distribution
+ 
+      REAL FUNCTION PROBKS( ALAM )
+*+
+*  Name:
+*     PROBKS
+ 
+*  Purpose:
+*     Returns the KS statistic
+ 
+*  Language:
+*     Starlink Fortran 77
+ 
+*  Invocation:
+*     PROB = PROBKS( ALAM )
+ 
+*  Arguments:
+*     PROBKS = REAL (Returned via FUNCTION)
+*       The probability the samples were identical
+*     ALAM   = REAL (Given)
+*       Measure of separation of two cumulative distributions
+ 
+*  References:
+*     - Press et al, 1992, "Numerical Recipes in FORTRAN", 2nd edition (CUP)
+ 
+ 
+*  Authors:
+*     TIMJ: Tim Jenness (JACH)
+*     {enter_new_authors_here}
+ 
+*  History:
+*     1996 October 22 (TIMJ):
+*       Original Starlink version
+*     {enter_changes_here}
+ 
+*  Bugs:
+*     {note_any_bugs_here}
+ 
+*-
+ 
+*  Type Definitions:
+      IMPLICIT NONE
+ 
+*  Arguments given:
+      REAL    ALAM                  ! Dimensionless distance
+ 
+*  Local constants:
+      REAL    EPS1                  ! Required precision
+      PARAMETER (EPS1 = 0.001)
+      REAL    EPS2                  !
+      PARAMETER (EPS2 = 1.E-8)
+ 
+*  Local variables:
+      REAL    A2                    !
+      REAL    FAC                   !
+      INTEGER J                     ! Loop counter
+      REAL    TERM                  !
+      REAL    TERMBF                !
+*.
+ 
+*  Initialise loop variables
+      A2 = -2. * DBLE(ALAM)**2
+      FAC = 2.
+      PROBKS = 0.0
+      TERMBF = 0.0
+ 
+*  Begin loop
+      DO J = 1, 100
+ 
+         TERM = FAC * EXP( A2 * J**2 )
+         PROBKS = PROBKS + TERM
+ 
+*     Return if term is smaller than precision
+         IF (ABS(TERM) .LE. EPS1 * TERMBF .OR. 
+     :        ABS(TERM).LE. EPS2 * PROBKS) THEN
+            RETURN
+         END IF
+ 
+        FAC = -FAC
+        TERMBF = ABS(TERM)
+ 
+      END DO
+ 
+      PROBKS=1.
+      RETURN
+      END
+
+
+****** Sort routine from KAPPA
+
+      SUBROUTINE KPG1_QSRTR( EL, LOW, HIGH, ARRAY, STATUS )
+*+
+*  Name:
+*     KPG1_QSRTX
+ 
+*  Purpose:
+*     Sorts a vector via the Quicksort algorithm.
+ 
+*  Language:
+*     Starlink Fortran 77
+ 
+*  Invocation:
+*     CALL KPG1_QSRTx( EL, LOW, HIGH, ARRAY, STATUS )
+ 
+*  Description:
+*     This routine sorts a vector in situ between an upper and lower
+*     bounds using the Quicksort algorithm.
+ 
+*  Arguments:
+*     EL = INTEGER (Given)
+*        The number of elements in the array that is to be sorted.
+*     LOW = INTEGER (Given)
+*        The lower bound within the array, below which the array
+*        elements will not be sorted.  It should be less than the
+*        upper bound and must be within the array.  In the latter case
+*        an error will result and the routine will not sort the array.
+*     HIGH = INTEGER (Given)
+*        The upper bound within the array, above which the array
+*        elements will not be sorted.  It should be greater than the
+*        lower bound and must be within the array.  In the latter case
+*        an error will result and the routine will not sort the array.
+*     ARRAY( EL ) = ? (Given and Returned)
+*        The array to be sorted.
+*     STATUS = INTEGER (Given and Returned)
+*        The global status.
+ 
+*  Algorithm:
+*     Quicksort works by picking a random "pivot" element in the array
+*     then moving every element that is bigger to one side of the
+*     pivot, and every element that is smaller to the other side.  The
+*     procedure is repeated with the two subdivisions created by the
+*     pivot.  When the number of elements in a subdivision reaches two,
+*     the array is sorted.
+*
+*     Since recursion is not possible in Fortran, pushdown stacks are
+*     used to mimic the recursive operation of the Quicksort algorithm.
+*     These are also more efficient than recursion because they avoid
+*     the expensive subroutine calls, especially for the many small
+*     subdivisions.  The stacks contains the subdivisions to be sorted.
+*     The stack is popped to obtain a subfile to sort.  The partitioning
+*     pushs the larger subdivisions on to the stack, and the smaller
+*     subdivision is processed immediately.  Hence the stack size
+*     is only lg(EL).
+ 
+*  Implementation Status:
+*     -  There is a routine for each of the data types integer, real,
+*     double precision, and character: replace "x" in the routine nam
+*     by I, R, D, or C respectively as appropriate.
+*     -  If the maximum bound is less than the minimum, the bounds are
+*     swapped.
+ 
+*  References:
+*     -  Sedgwick, R., 1988, "Algorithms" (Addison-Wesley).
+ 
+*  Timing:
+*     For N elements to be sorted the timing goes as NlnN.
+ 
+*  Authors:
+*     MJC: Malcolm J. Currie (STARLINK)
+*     {enter_new_authors_here}
+ 
+*  History:
+*     1991 January 11 (MJC):
+*        Original version.
+*     {enter_changes_here}
+ 
+*  Bugs:
+*     {note_any_bugs_here}
+ 
+*-
+ 
+*  Type Definitions:
+      IMPLICIT NONE              ! No implicit typing
+ 
+*  Global Constants:
+      INCLUDE '/star/include/sae_par'          ! Standard SAE constants
+ 
+*  Arguments Given:
+      INTEGER
+     :  EL,
+     :  LOW,
+     :  HIGH
+ 
+*  Arguments Given and Returned:
+      REAL
+     :  ARRAY( EL )
+ 
+*  Status:
+      INTEGER STATUS             ! Global status
+ 
+*  Local Constants:
+      INTEGER MXSTAK             ! The size of the stack which is
+                                 ! log base 2 of the maximum number of
+                                 ! elements in the array
+      PARAMETER ( MXSTAK = 32 )
+ 
+*  Local Variables:
+      INTEGER
+     :  I,                       ! Ascending pointer to an array element
+     :  J,                       ! Descending pointer to an array
+                                 ! element
+     :  LOWER( MXSTAK ),         ! Stack for the elements of the array
+                                 ! below the pivot element
+     :  LBND,                    ! Polarity-checked version of the lower
+                                 ! bound
+     :  PSTACK,                  ! Pointer to the stack
+     :  UBND,                    ! Polarity-checked version of the upper
+                                 ! bound
+     :  UPPER( MXSTAK )          ! Stack for the elements of the array
+                                 ! above the pivot element
+ 
+      REAL
+     :  PIVOT,                   ! Pivot element
+     :  TEMP                     ! Used for swapping array elements
+ 
+*.
+ 
+*    Check inherited global status.
+ 
+      IF ( STATUS .NE. SAI__OK ) RETURN
+ 
+*    Validate the array limits.
+*    ==========================
+ 
+*    Check that they lie within the array's bounds.  If not report an
+*    the error and exit.
+ 
+      IF ( LOW .LT. 1 .OR. LOW .GT. EL .OR. HIGH .LT. 1 .OR.
+     :     HIGH .GT. EL ) THEN
+         STATUS = SAI__ERROR
+         print *, 'Sorting limits are outside bounds of array'
+         GOTO 999
+      END IF
+ 
+*    Check the polarity.
+ 
+      IF ( LOW .GT. HIGH ) THEN
+ 
+*       A swap is necessary.
+ 
+         LBND = LOW
+         UBND = HIGH
+      ELSE
+ 
+*       Just copy the input values.
+ 
+         LBND = LOW
+         UBND = HIGH
+      END IF
+ 
+*    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
+*    Intialise the stacks.
+ 
+      LOWER( 1 ) = LBND
+      UPPER( 1 ) = UBND
+      PSTACK = 1
+ 
+*    Loop until the stack is empty.
+ 
+      DO WHILE ( PSTACK .GT. 0 )
+ 
+*       Pop the stack.
+ 
+         IF ( LOWER( PSTACK ) .GE. UPPER( PSTACK ) ) THEN
+            PSTACK = PSTACK - 1
+         ELSE
+ 
+*          Partition the array.
+*          ====================
+ 
+            I = LOWER( PSTACK )
+            J = UPPER( PSTACK )
+            PIVOT = ARRAY( J )
+ 
+*          Move in from both sides towards the pivot element.
+ 
+            DO WHILE ( I .LT. J )
+               DO WHILE ( ( I .LT. J )  .AND. ARRAY( I ) .LE. PIVOT )
+                  I = I + 1
+               END DO
+ 
+               DO WHILE ( ( J .GT. I )  .AND. ARRAY( J ) .GE. PIVOT )
+                  J = J - 1
+               END DO
+ 
+*             If the pivot element is not yet reached, it means that two
+*             elements on either side are out of order, so swap them.
+ 
+               IF ( I .LT. J ) THEN
+                  TEMP = ARRAY( I )
+                  ARRAY( I ) = ARRAY( J )
+                  ARRAY( J ) = TEMP
+               END IF
+            END DO
+ 
+*          Move the pivot element back to its proper place in the array.
+ 
+            J = UPPER( PSTACK )
+            TEMP = ARRAY( I )
+            ARRAY( I ) = ARRAY( J )
+            ARRAY( J ) = TEMP
+ 
+*          Push values on to the stacks to further subdivide the
+*          array.
+ 
+            IF ( ( I - LOWER( PSTACK ) ) .LT.
+     :           ( UPPER( PSTACK ) - I ) ) THEN
+               LOWER( PSTACK + 1 ) = LOWER( PSTACK )
+               UPPER( PSTACK + 1 ) = I - 1
+               LOWER( PSTACK )     = I + 1
+            ELSE
+               LOWER( PSTACK + 1 ) = I + 1
+               UPPER( PSTACK + 1 ) = UPPER( PSTACK )
+               UPPER( PSTACK )     = I - 1
+            END IF
+ 
+*          Increment the stack counter.
+ 
+            PSTACK = PSTACK + 1
+         END IF
+      END DO
+ 
+  999 CONTINUE
+ 
+      END
