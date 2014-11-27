@@ -35,6 +35,11 @@ C               Use GSD_INQ_SIZE with GSD__MXDIMS dimensions
 C     2) Files:
 C               Shouldn't try to read from unit 6!
 C               Lots of errors caused by OPEN command specyfying 'NEW'
+C     3) GET_CHARACTER modified to be standalone. Had trouble passing
+C        Strings back through (real)rvalues array. Gave up and did
+C        own gsd_get0c (meant that opening and closing GSD file
+C        is necessary 3 times more per file :-( - don't have time to
+C        be tidy!)
 
 C ------------ End UNIX fixes ----------------
 
@@ -67,28 +72,8 @@ c    @ems_dir:emslink
 c  $ EXIT
                         	IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 
 *    Local variables :
@@ -199,14 +184,14 @@ C explicitly say .dat
 C This is a kludge - should use LEN of some kind
         actinput=input(1:14)//'.dat'//''
 C End kludge
-        print *,'Filename is ',actinput
+C        print *,'Filename is ',actinput
         inquire(file=actinput,exist=exists)
         if(exists) then
            nofile=.false.
         else
 C Same kludge here...
            actinput=datadir(1:len)//'/'//input(1:14)//'.dat'//''
-        print *,'Filename is ',actinput
+C        print *,'Filename is ',actinput
            inquire(file=actinput,exist=exists)
            if(exists) then
               nofile=.false.
@@ -214,7 +199,7 @@ C Same kludge here...
               input='obs_cbe_'//scan(1:4)//''
 C Same kludge here...
               actinput=input(1:12)//'.dat'//''
-        print *,'Filename is ',actinput
+C        print *,'Filename is ',actinput
               inquire(file=input,exist=exists)
               if(exists) then
                  nofile=.false.
@@ -224,7 +209,7 @@ C Same kludge here...
                  input='obs_cbe_'//scan(1:4)//''
 C Same kludge here...
                  actinput=datadir(1:len)//'/'//input(1:12)//'.dat'//''
-        print *,'Filename is ',actinput
+C        print *,'Filename is ',actinput
                  inquire(file=input,exist=exists)
                  if(exists) then
                     nofile=.false.
@@ -251,7 +236,7 @@ C Same kludge here...
            variname='C1SNA1'
            CALL GET_CHARACTER(input, variname, sourcename, STATUS)
            if (STATUS.ne.adam__ok) sourcename=' '
-*           write(6,*) 'C1SNA1 ', sourcename
+*           write(6,*) 'C1SNA1 =', sourcename
 
            variname='C4ERA'
            STATUS = ADAM__OK
@@ -321,14 +306,14 @@ C Same kludge here...
            variname='C7FIL'
            STATUS = ADAM__OK
            CALL GET_CHARACTER(input, variname, c_filter, STATUS)
-*            write(6,*) 'C7FIL', c_filter
+*           write(6,*) 'C7FIL =', c_filter
            if (status.ne.adam__ok) c_filter=' '
            filter = c_filter
 
            variname='C7AP'
            STATUS = ADAM__OK
            CALL GET_CHARACTER(input, variname, c_aperture, STATUS)
-*            write(6,*) 'C7AP', c_aperture
+*           write(6,*) 'C7AP =', c_aperture
            if (status.ne.adam__ok) c_aperture=' '
 * sometimes the filter is in integer form: e.g. 65 instead of 65.0
            if (index(c_aperture,'.') .ne. 0) then
@@ -1163,7 +1148,7 @@ c       corrected signals and also automatic or interactive despiking.
         ERRMIN=ERR_ZERO(1)
         ERRMAX=ERR_ZERO(1)
         HCOPY = .FALSE.
-        HDEVICE = 'POSTSCRIPT_L'
+        HDEVICE = '/PS'
 
         DO I=1,NOBS
             PAIR(I)=REAL(I)
@@ -1195,15 +1180,24 @@ c       corrected signals and also automatic or interactive despiking.
         CLOSE(UNIT=11)
         CLOSE(UNIT=14)
 
+ 666    CONTINUE
         write(6,*) '   '
-        WRITE(6,'(A50,$)') ' Enter plot device [TEK,/XSERVE,POSTSCRIPT_L,etc] '
+        WRITE(6,'(A50,$)') ' Enter plot device [/TEK,/XSERVE,/PS,etc] '
         READ (5,'(A)') DEVICE
+
+*       List all PGPLOT devices
+        IF (DEVICE(1:1) .EQ. '?') THEN
+           CALL PGLDEV
+           GOTO 666
+        ENDIF
+
         ODEVICE = DEVICE
  700    CALL UUCASE(DEVICE)
-        IF (DEVICE(1:3).EQ.'TEK') THEN
+        PRINT *, 'Device is ',DEVICE
+        IF (DEVICE(2:4).EQ.'TEK') THEN
            WRITE(6,*) 'Please note, to continue from a plot'
            WRITE(6,*) 'Simply press the Return key'
-c           CALL LIB$WAIT(5.0)   !PAUSE           
+           CALL SLEEP(2)             !PAUSE           
            CALL MODE401X
         ENDIF
         CALL PGBEGIN(0,DEVICE,2,1)
@@ -2040,28 +2034,8 @@ C   CLEAR UP and OUTPUT DATA BACK TO SUBROUTINE 'MEAN', 'STERR'   !
       SUBROUTINE GET_C13DAT (FILENAME, QARRAY, RARRAY, DCOUNT, STATUS)
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *  Import:
       CHARACTER*64 FILENAME
@@ -2151,28 +2125,8 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       SUBROUTINE GET_C13SPV (FILENAME, QARRAY, DARRAY, DCOUNT, STATUS)
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *  Import:
       character*64 filename
@@ -2265,28 +2219,8 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       SUBROUTINE GET_C13RAW_ERROR (FILENAME, QARRAY, DARRAY, DCOUNT, STATUS)
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *  Import:
       character*64 filename
@@ -2382,44 +2316,46 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *  The CVALUE is a Character*16 data item.
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *  Define GET_GSD_DATA arguments
 *  Imports:
       CHARACTER*64 FILENAME
       CHARACTER*16 CNAME
 *  Export:
+*      CHARACTER*16 CVALUE
       CHARACTER*16 CVALUE
 *  Status:
       INTEGER STATUS
 *  Local:
       INTEGER DUMMY
+      INTEGER DDD
+      INTEGER DD
+      INTEGER DDDB
+      INTEGER DDDD
 * 
+      INTEGER NUMBER
+      INTEGER FD
+      REAL VERSION
+      CHARACTER*1 TYPE
+      character*(gsd__szunit) unit
+      character*20 label        !gsd file label
+      integer nitem	
+      logical array
+      integer index (gsd__szindex)	
       IF (STATUS.NE.ADAM__OK) RETURN
 
-      CALL GET_GSD_DATA (FILENAME, CNAME,
-     :     DUMMY, DUMMY, DUMMY, DUMMY, CVALUE, DUMMY, STATUS)
+C      CALL GET_GSD_DATA (FILENAME, CNAME,
+C     :     DUMMY, DDDB, DDDD, DD, CVALUE, DDD, STATUS)
+      call gsd_open_read (filename, fd, version, label, nitem, status)
+      CALL GSD_FIND (fd, cname, number, unit, type,
+     :     array, index, status)
+      IF (status .ne. adam__ok) return
+      call gsd_get0c (index,cvalue, status)
+
+      CALL GSD_CLOSE(FD)
+
       END
 * 
       SUBROUTINE GET_REAL (FILENAME, RNAME, RVALUE, STATUS)
@@ -2427,29 +2363,7 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *  The RVALUE is Real*4 data item.
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-       include 'gsd_pars.inc'
+       include '/star/include/adam_err'
 *  Define GET_GSD_DATA arguments
 *  Imports:
       CHARACTER*64 FILENAME
@@ -2472,29 +2386,7 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *  The IVALUE is Integer*4 data item.
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-       include 'gsd_pars.inc'
+       include '/star/include/adam_err'
 *  Define GET_GSD_DATA arguments
 *  Imports:
       CHARACTER*64 FILENAME
@@ -2517,29 +2409,7 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *  The IVALUE is Integer*4 data item.
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-       include 'gsd_pars.inc'
+       include '/star/include/adam_err'
 *  Define GET_GSD_DATA arguments
 *  Imports:
       CHARACTER*64 FILENAME
@@ -2563,29 +2433,7 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *  The DVALUE is Real*8 data item.
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-       include 'gsd_pars.inc'
+       include '/star/include/adam_err'
 *  Define GET_GSD_DATA arguments
 *  Imports:
       CHARACTER*64 FILENAME
@@ -2608,28 +2456,8 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *+ Get Airmass from GSD file
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *  Import:
       CHARACTER*64 FILENAME
@@ -2693,28 +2521,8 @@ c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 *    Type Definitions :
       IMPLICIT NONE
 *    Global constants :
-c       include '/star/include/adam_err'
-       integer adam__ok
-       parameter ( adam__ok = 0 )   !  normal subroutine return status
-c       include '/star/include/prm_par'
-*  Bad value, used for flagging undefined data.
-        byte val__badub
-        parameter ( val__badub = 'ff'x )
-        byte val__badb
-        parameter ( val__badb = '80'x )
-        integer*2 val__baduw
-        parameter ( val__baduw = 'ffff'x )
-        integer*2 val__badw
-        parameter ( val__badw = '8000'x )
-        integer val__badi
-        parameter ( val__badi = '80000000'x )
-        real val__badr
-        parameter ( val__badr = 'ff7fffff'x )
-        double precision val__badd
-        parameter ( val__badd = 'ffefffffffffffff'x )
-*  Maximum (most positive) non-bad value.
-*  Minimum (most negative) non-bad value.
-c+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+       include '/star/include/adam_err'
+       include '/star/include/prm_par'
        include 'gsd_pars.inc'
 *    Import :
       character*(*) filename
@@ -2751,7 +2559,6 @@ c     INTEGER DIMNUMBERS(GSD__MXDIM)     !The ordinal numbers of dim. scalars
 c      INTEGER DIMINDEX(GSD__SZINDEX, GSD__MXDIM) !indices of dim. quantities
       integer actvals                   ! actual number of values
       integer actdims			! actual number of dimensions
-      integer number
       integer size			! total size in cells
 * GSD_GET1R
       integer actvals             !count of actual data elems. transfered
