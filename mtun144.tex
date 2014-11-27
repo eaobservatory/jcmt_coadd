@@ -1,4 +1,5 @@
-\documentstyle{article}
+\documentclass{article}
+\usepackage{graphicx}
 \pagestyle{myheadings}
 
 %------------------------------------------------------------------------------
@@ -209,16 +210,25 @@ the source.
 \noindent{\bf 4.} The data are now in a form that may be usefully displayed
 graphically. The raw signal levels (mV) and extinction corrected signal levels
 (mV) are plotted against pair number for the total coadded (or individual)
-observation (see Fig.1). The left-hand panel shows the raw data (mV) against the running
-pair number. The right-hand panel shows the data corrected for
-atmospheric extinction. The dashed line indicates the mean value, before
-despiking, and the dotted lines represent the 3$\sigma$ deviations from the
-mean.
+observation (see Fig.~\ref{fig:data}).
 The option is provided to despike the data automatically at some user-defined
 significance level or to despike manually with a cursor.
 The dot-dashed line shows the users decision to clip the data at
 2.5$\sigma$ and reject 5 samples.
 The graphics routines are based on PGPLOT and are device independent.
+
+
+\begin{figure}[ht]
+\includegraphics[width=\textwidth]{mtun144fig1}
+\caption{
+Example plot with our test data.
+The left-hand panel shows the raw data (mV) against the running
+pair number. The right-hand panel shows the data corrected for
+atmospheric extinction. The dashed line indicates the mean value, before
+despiking, and the dotted lines represent the 3$\sigma$ deviations from the
+mean.}
+\label{fig:data}
+\end{figure}
 
 
 The data can be redisplayed showing the data before and after despiking,
@@ -340,7 +350,7 @@ Is this acceptable? (Y/N) [N] <cr>
 A product of the reduction is the calculation of the running standard-error,
 $\epsilon $. This should decrease as $\propto n^{-1/2}$, where $n$ is the
 number of samples in the concatenated observations which, for equal cycle
-times, is a measure of the integration time. In the example shown (Fig. 2)
+times, is a measure of the integration time. In the example shown (Fig.~\ref{fig:error})
 5 observations of 50 samples (20
 secs/sample) have been concatenated and despiked, producing a total
 integration of 5000 seconds
@@ -352,17 +362,15 @@ reasonable sky conditions, one can continue to improve upper-limits or
 the sensitivity of a detection with long integrations.
 
 
-%\begin{figure}[ht]
-
-% \vspace{8in}
-% \special{coadd.ps}
-% \caption{
-% Figure 2. The decrease in standard error, $\epsilon$, for a 5000 second
-% concatenated
-% integration on Mrk376 is plotted against pair-number (or time for equal
-% length cycles). The thin line represents $\epsilon \propto t^{-1/2}$ and
-% demonstrates that the noise properties of the data are close to normal.}
-%\end{figure}
+\begin{figure}[ht]
+\includegraphics[width=\textwidth]{mtun144fig2}
+\caption{
+The decrease in standard error, $\epsilon$, for a 5000 second concatenated
+integration on Mrk376 is plotted against pair-number (or time for equal
+length cycles). The thin line represents $\epsilon \propto t^{-1/2}$ and
+demonstrates that the noise properties of the data are close to normal.}
+\label{fig:error}
+\end{figure}
 
 
 \end{document}
