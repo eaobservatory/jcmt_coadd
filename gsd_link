@@ -1,0 +1,2 @@
+#!/bin/csh -f
+echo " -L/star/lib -lgsd -lcnf"

@@ -1,0 +1,53 @@
+#!/bin/csh -f
+#
+# Coadd JCMT Photometry data
+#
+if ( $#argv > 0 ) then
+  set defaultdir=${argv[1]}
+  shift
+else
+  if ($?DATADIR) then
+     set defaultdir = $DATADIR
+  else
+    set defaultdir=`pwd | awk -F/ '{print $NF}'`
+  endif
+endif
+echo " "
+/usr/ucb/echo -n "Give data directory [${defaultdir}]: "
+set answer = $<
+if ("${answer}" == "") then
+  set answer = $defaultdir
+endif
+if ( "`echo ${answer} | cut -c1`" == "/" ) then
+   setenv DATADIR ${answer}
+else
+   setenv DATADIR /jcmtarchive/${answer}
+endif
+echo " "
+echo "Using ${DATADIR} as datadirectory"
+echo " "
+/jcmt_sw/coadd/jcmt_coadd.exe $argv
+cleanup:
+#  Clean up temporary files created by COADD
+#  Date: 12-May-1992
+  echo ""
+  echo "All versions of the following files will be deleted:"
+  echo ""
+  echo "coadd.dat   for012.dat           fort.12"
+  echo "mv.dat      mv_taucorrected.dat  stderr.dat" 
+  echo ""
+  set ans = "n"
+  echo -n "Is this acceptable? (Y/N) [N]: "  
+  set ans = $<
+  if ("$ans" != "y" && "$ans" != "Y") then
+    echo ""
+    echo "No files were deleted"
+    exit
+  endif
+  if ("$ans" == "y" || "$ans" == "Y") then
+    echo ""
+    echo "Deleting files"
+    \rm coadded.dat for012.dat mv.dat mv_taucorrected.dat \
+        stderr.dat fort.12 >& /dev/null
+    exit
+  endif
