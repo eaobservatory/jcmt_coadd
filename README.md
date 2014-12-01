@@ -16,3 +16,5 @@ JCMT/UKIRT Newsletter #5, p32, from 1993 contains a detailed overview of the
 software.
 
 http://www.jach.hawaii.edu/JCMT/publications/newsletter/ju5/jcmtukirt1993spring.pdf
+
+Registered at the Astrophysics Source Code Library as code [ascl:1411.020](http://ascl.net/1411.020)
